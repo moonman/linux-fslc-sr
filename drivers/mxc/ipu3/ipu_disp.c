@@ -1241,7 +1241,7 @@ int32_t ipu_init_sync_panel(struct ipu_soc *ipu, int disp, uint32_t pixel_clk,
 			_ipu_di_sync_config(ipu,
 					disp, 		/* display */
 					DI_SYNC_AFIELD, 		/* counter */
-					v_total/2 - 1, 	/* run count */
+					(v_total/2 + 1) - 1, 	/* run count */
 					DI_SYNC_HSYNC,	/* run_resolution */
 					h_total/2, /*  offset */
 					DI_SYNC_CLK,	/* offset resolution */
