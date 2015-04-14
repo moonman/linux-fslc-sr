@@ -34,16 +34,10 @@
 #include <linux/cma.h>
 #include <linux/highmem.h>
 
-struct cma {
-	unsigned long	base_pfn;
-	unsigned long	count;
-	unsigned long	*bitmap;
-	unsigned int order_per_bit; /* Order of pages represented by one bit */
-	struct mutex	lock;
-};
+#include "cma.h"
 
-static struct cma cma_areas[MAX_CMA_AREAS];
-static unsigned cma_area_count;
+struct cma cma_areas[MAX_CMA_AREAS];
+unsigned cma_area_count;
 static DEFINE_MUTEX(cma_mutex);
 
 phys_addr_t cma_get_base(struct cma *cma)
@@ -59,11 +53,6 @@ unsigned long cma_get_size(struct cma *cma)
 static unsigned long cma_bitmap_aligned_mask(struct cma *cma, int align_order)
 {
 	return (1UL << (align_order >> cma->order_per_bit)) - 1;
-}
-
-static unsigned long cma_bitmap_maxno(struct cma *cma)
-{
-	return cma->count >> cma->order_per_bit;
 }
 
 static unsigned long cma_bitmap_pages_to_bits(struct cma *cma,
