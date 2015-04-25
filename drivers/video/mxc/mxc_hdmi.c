@@ -1931,7 +1931,7 @@ static void mxc_hdmi_notify_fb(struct mxc_hdmi *hdmi, bool force_all)
 
 static void mxc_hdmi_edid_rebuild_modelist(struct mxc_hdmi *hdmi)
 {
-	int i;
+	int i, vic;
 	struct fb_videomode *mode;
 
 	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
@@ -1949,18 +1949,28 @@ static void mxc_hdmi_edid_rebuild_modelist(struct mxc_hdmi *hdmi)
 		 */
 		mode = &hdmi->fbi->monspecs.modedb[i];
 
+		vic = mxc_edid_mode_to_vic(mode);
 		if (hdmi->edid_cfg.hdmi_cap &&
-		    (mxc_edid_mode_to_vic(mode) == 0))
+		    (vic == 0))
 			continue;
+
+		if (!(mode->vmode & FB_VMODE_ASPECT_MASK)) {
+			if (mode->yres == (mode->xres * 3)/4)
+				mode->vmode |= FB_VMODE_ASPECT_4_3;
+			else
+				mode->vmode |= FB_VMODE_ASPECT_16_9;
+		}
 
 		if (fb_add_videomode(mode, &hdmi->fbi->modelist))
 			continue;
 
-		dev_dbg(&hdmi->pdev->dev, "Added mode %d:", i);
+		dev_dbg(&hdmi->pdev->dev, "Added mode: %d, vic: %d", i, vic);
 		dev_dbg(&hdmi->pdev->dev,
-			"xres = %d, yres = %d, freq = %d, vmode = %d, flag = %d\n",
+			"xres = %d, yres = %d, ratio = %s, freq = %d, vmode = %d, flag = %d\n",
 			hdmi->fbi->monspecs.modedb[i].xres,
 			hdmi->fbi->monspecs.modedb[i].yres,
+			mode->vmode & FB_VMODE_ASPECT_4_3 ? "4/3" :
+			    mode->vmode & FB_VMODE_ASPECT_16_9 ? "16/9" : "n/a",
 			hdmi->fbi->monspecs.modedb[i].refresh,
 			hdmi->fbi->monspecs.modedb[i].vmode,
 			hdmi->fbi->monspecs.modedb[i].flag);
