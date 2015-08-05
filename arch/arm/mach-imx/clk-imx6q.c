@@ -579,10 +579,10 @@ static void __init imx6q_clocks_init(struct device_node *ccm_node)
 	 * all modules that sourceing clk from PLL2_PFD2 will
 	 * be impacted.
 	 */
-	imx_clk_set_rate(clk[IMX6QDL_CLK_PLL2_PFD2_396M], 352000000);
-	imx_clk_set_parent(clk[IMX6QDL_CLK_VPU_AXI_SEL], clk[IMX6QDL_CLK_PLL2_PFD2_396M]);
+	imx_clk_set_rate(clk[IMX6QDL_CLK_PLL2_PFD0_352M], 352000000);
 	pr_info("VPU 352M is enabled!\n");
 #endif
+	imx_clk_set_parent(clk[IMX6QDL_CLK_VPU_AXI_SEL], clk[IMX6QDL_CLK_PLL2_PFD0_352M]);
 
 	/* Set initial power mode */
 	imx6q_set_lpm(WAIT_CLOCKED);
