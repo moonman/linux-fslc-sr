@@ -1591,7 +1591,7 @@ static int mxc_edid_read_internal(struct mxc_hdmi *hdmi, unsigned char *edid,
 			struct mxc_edid_cfg *cfg, struct fb_info *fbi)
 {
 	int extblknum;
-	int i, j, ret;
+	int i, ret;
 	unsigned char *ediddata = edid;
 	unsigned char tmpedid[EDID_LENGTH];
 
@@ -1641,10 +1641,10 @@ static int mxc_edid_read_internal(struct mxc_hdmi *hdmi, unsigned char *edid,
 	}
 
 	extblknum = edid[0x7E];
-	if (extblknum == 255)
-		extblknum = 0;
 
-	if (extblknum) {
+	if (extblknum < 0) {
+		return extblknum;
+	} else {
 		ediddata = edid + EDID_LENGTH;
 		for (i = 0; i < 128; i++) {
 			*ediddata = hdmi_edid_i2c_read(hdmi, i, 1);
@@ -1656,25 +1656,25 @@ static int mxc_edid_read_internal(struct mxc_hdmi *hdmi, unsigned char *edid,
 	memset(&fbi->monspecs, 0, sizeof(fbi->monspecs));
 	fb_edid_to_monspecs(edid, &fbi->monspecs);
 
-	if (extblknum) {
-		ret = mxc_edid_parse_ext_blk(edid + EDID_LENGTH,
-				cfg, &fbi->monspecs);
-		if (ret < 0)
-		fb_edid_add_monspecs(edid + EDID_LENGTH, &fbi->monspecs);
-		if (fbi->monspecs.modedb_len > 0)
-			hdmi->edid_cfg.hdmi_cap = false;
-		else
+	ret = mxc_edid_parse_ext_blk(edid + EDID_LENGTH,
+			cfg, &fbi->monspecs);
+	if (ret < 0) {
+                fb_edid_add_monspecs(edid + EDID_LENGTH, &fbi->monspecs);
+                if (fbi->monspecs.modedb_len > 0)
+                        hdmi->edid_cfg.hdmi_cap = false;
+                else
 			return -ENOENT;
 	}
 
 	/* need read segment block? */
 	if (extblknum > 1) {
-		for (j = 2; j <= extblknum; j++) {
+		int j;
+		for (j = 1; j <= extblknum; j++) {
 			for (i = 0; i < 128; i++)
-				tmpedid[i] = hdmi_edid_i2c_read(hdmi, i, j);
+				*(tmpedid + 1) = hdmi_edid_i2c_read(hdmi, i, j);
 
 			/* edid ext block parsing */
-			ret = mxc_edid_parse_ext_blk(tmpedid,
+			ret = mxc_edid_parse_ext_blk(tmpedid + EDID_LENGTH,
 					cfg, &fbi->monspecs);
 			if (ret < 0)
 				return -ENOENT;
@@ -1717,11 +1717,11 @@ static int mxc_hdmi_read_edid(struct mxc_hdmi *hdmi)
 			clkdis &= ~HDMI_MC_CLKDIS_HDCPCLK_DISABLE;
 			hdmi_writeb(clkdis, HDMI_MC_CLKDIS);
 		}
+
 	}
-	if (ret < 0) {
-		dev_dbg(&hdmi->pdev->dev, "read failed\n");
+
+	if (ret < 0)
 		return HDMI_EDID_FAIL;
-	}
 
 	dev_info(&hdmi->pdev->dev, "%s HDMI in %s mode\n", __func__, hdmi->edid_cfg.hdmi_cap?"HDMI":"DVI");
 	hdmi->plug_event = hdmi->edid_cfg.hdmi_cap?HDMI_IH_PHY_STAT0_HPD:HDMI_DVI_IH_STAT;
@@ -1890,9 +1890,9 @@ static void mxc_hdmi_edid_rebuild_modelist(struct mxc_hdmi *hdmi)
 		 */
 		mode = &hdmi->fbi->monspecs.modedb[i];
 
-		if (hdmi->edid_cfg.hdmi_cap &&
-		    (mode->vmode & FB_VMODE_INTERLACED) &&
-		    (mxc_edid_mode_to_vic(mode) == 0))
+		if ((mode->vmode & FB_VMODE_INTERLACED) ||
+		    (hdmi->edid_cfg.hdmi_cap &&
+		    (mxc_edid_mode_to_vic(mode) == 0)))
 			continue;
 
 		dev_dbg(&hdmi->pdev->dev, "Added mode %d:", i);
@@ -1926,6 +1926,7 @@ static void  mxc_hdmi_default_modelist(struct mxc_hdmi *hdmi)
 	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
 
 	/* If not EDID data read, set up default modelist  */
+	dev_info(&hdmi->pdev->dev, "No modes read from edid\n");
 	dev_info(&hdmi->pdev->dev, "create default modelist\n");
 
 	console_lock();
