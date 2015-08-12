@@ -149,6 +149,12 @@
         };
 };
 
+&dcic1 {
+	dcic_id = <0>;
+	dcic_mux = "dcic-hdmi";
+	status = "okay";
+};
+
 &hdmi_core {
 	ipu_id = <0>;
 	disp_id = <0>;
