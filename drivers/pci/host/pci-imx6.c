@@ -927,9 +927,7 @@ static int pci_imx_suspend_noirq(struct device *dev)
 		 * So, toggle bit18 of GPR1, used as a workaround of errata
 		 * "PCIe PCIe does not support L2 Power Down"
 		 */
-		regmap_update_bits(imx6_pcie->iomuxc_gpr, IOMUXC_GPR1,
-				IMX6Q_GPR1_PCIE_TEST_PD,
-				IMX6Q_GPR1_PCIE_TEST_PD);
+		imx6_pcie_assert_core_reset(pp);
 	}
 
 	return 0;
@@ -993,8 +991,9 @@ static int pci_imx_resume_noirq(struct device *dev)
 		 * So, toggle bit18 of GPR1, used as a workaround of errata
 		 * "PCIe PCIe does not support L2 Power Down"
 		 */
-		regmap_update_bits(imx6_pcie->iomuxc_gpr, IOMUXC_GPR1,
-				IMX6Q_GPR1_PCIE_TEST_PD, 0);
+		ret = imx6_pcie_deassert_core_reset(pp);
+		if (ret < 0)
+			return ret;
 	}
 
 	return 0;
