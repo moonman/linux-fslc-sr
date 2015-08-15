@@ -34,10 +34,7 @@
 #include <linux/clk.h>
 #include <linux/regulator/consumer.h>
 
-#ifdef CONFIG_MXC_BUSFREQ
 #include <linux/busfreq-imx6.h>
-#endif
-
 
 #ifdef CONFIG_DEVICE_THERMAL
 #include <linux/device_cooling.h>
@@ -620,17 +617,13 @@ _SetClock(
 #ifdef CONFIG_PM
 static int gpu_runtime_suspend(struct device *dev)
 {
-#ifdef CONFIG_MXC_BUSFREQ
     release_bus_freq(BUS_FREQ_HIGH);
-#endif
     return 0;
 }
 
 static int gpu_runtime_resume(struct device *dev)
 {
-#ifdef CONFIG_MXC_BUSFREQ
     request_bus_freq(BUS_FREQ_HIGH);
-#endif
     return 0;
 }
 
