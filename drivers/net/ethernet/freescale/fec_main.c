@@ -1722,6 +1722,7 @@ static void fec_enet_adjust_link(struct net_device *ndev)
 		if (!fep->link) {
 			fep->link = phy_dev->link;
 			status_change = 1;
+			pm_runtime_get_sync(ndev->dev.parent);
 		}
 
 		if (fep->full_duplex != phy_dev->duplex) {
@@ -1752,6 +1753,7 @@ static void fec_enet_adjust_link(struct net_device *ndev)
 			napi_enable(&fep->napi);
 			fep->link = phy_dev->link;
 			status_change = 1;
+			pm_runtime_put_sync_suspend(ndev->dev.parent);
 		}
 	}
 
@@ -2801,7 +2803,6 @@ fec_enet_open(struct net_device *ndev)
 	phy_start(fep->phy_dev);
 	netif_tx_start_all_queues(ndev);
 
-	pm_runtime_get_sync(ndev->dev.parent);
 	if ((id_entry->driver_data & FEC_QUIRK_BUG_WAITMODE) &&
 	    !fec_enet_irq_workaround(fep))
 		pm_qos_add_request(&ndev->pm_qos_req,
