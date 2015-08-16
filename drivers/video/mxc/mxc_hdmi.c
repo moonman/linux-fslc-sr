@@ -1989,13 +1989,20 @@ static void mxc_hdmi_set_mode(struct mxc_hdmi *hdmi)
 	if (!hdmi->dft_mode_set) {
 		fb_videomode_to_var(&var, &hdmi->default_mode);
 		hdmi->dft_mode_set = true;
-	} else
+	} else {
 		fb_videomode_to_var(&var, &hdmi->previous_non_vga_mode);
+	}
 
-	fb_var_to_videomode(&m, &var);
-	dump_fb_videomode(&m);
+	if (var.xres) {
+		fb_var_to_videomode(&m, &var);
+		dump_fb_videomode(&m);
+		mode = fb_find_nearest_mode(&m, &hdmi->fbi->modelist);
+	} else {
+		dev_dbg(&hdmi->pdev->dev,
+				"No default mode using the best for the display\n");
+		mode = fb_find_best_display(&hdmi->fbi->monspecs, &hdmi->fbi->modelist);
+	}
 
-	mode = fb_find_nearest_mode(&m, &hdmi->fbi->modelist);
 	if (!mode) {
 		pr_err("%s: could not find mode in modelist\n", __func__);
 		return;
@@ -2105,6 +2112,10 @@ static void mxc_hdmi_cable_disconnected(struct mxc_hdmi *hdmi)
 	hdmi_disable_overflow_interrupts();
 
 	hdmi->hp_state = HDMI_HOTPLUG_DISCONNECTED;
+
+	/* Prepare driver for next connection */
+	hdmi->dft_mode_set = false;
+	memset(&hdmi->previous_non_vga_mode, 0, sizeof(struct fb_videomode));
 }
 
 static void hotplug_worker(struct work_struct *work)
