@@ -149,6 +149,13 @@ struct hdmi_phy_reg_config {
 	u16 reg_cksymtx;
 };
 
+enum hotplug_state {
+	HDMI_HOTPLUG_DISCONNECTED,
+	HDMI_HOTPLUG_CONNECTED_HDMI,
+	HDMI_HOTPLUG_CONNECTED_DVI,
+	HDMI_HOTPLUG_CONNECTED_NO_EDID,
+};
+
 struct mxc_hdmi {
 	struct platform_device *pdev;
 	struct platform_device *core_pdev;
@@ -165,11 +172,10 @@ struct mxc_hdmi {
 
 	struct hdmi_data_info hdmi_data;
 	int vic;
-	int edid_status;
 	struct mxc_edid_cfg edid_cfg;
 	u8 edid[HDMI_EDID_LEN];
 	bool fb_reg;
-	bool cable_plugin;
+	enum hotplug_state hp_state;
 	u8 blank;
 	bool dft_mode_set;
 	char *dft_mode_str;
@@ -268,10 +274,21 @@ static ssize_t mxc_hdmi_show_state(struct device *dev,
 {
 	struct mxc_hdmi *hdmi = dev_get_drvdata(dev);
 
-	if (hdmi->cable_plugin == false)
+	switch (hdmi->hp_state)
+	{
+	case HDMI_HOTPLUG_CONNECTED_HDMI:
+		strcpy(buf, "plugin HDMI\n");
+		break;
+	case HDMI_HOTPLUG_CONNECTED_DVI:
+		strcpy(buf, "plugin DVI\n");
+		break;
+	case HDMI_HOTPLUG_CONNECTED_NO_EDID: 
+		strcpy(buf, "plugin NO EDID\n");
+		break;
+	case HDMI_HOTPLUG_DISCONNECTED:
+	default:
 		strcpy(buf, "plugout\n");
-	else
-		strcpy(buf, "plugin\n");
+	}
 
 	return strlen(buf);
 }
@@ -1342,13 +1359,14 @@ static void mxc_hdmi_phy_init(struct mxc_hdmi *hdmi)
 	 * Otherwise HDMI PHY will get messed up and generate an overflow
 	 * interrupt that can't be cleared or detected by accessing the
 	 * status register. */
-	if (!hdmi->fb_reg || !hdmi->cable_plugin
-			|| (hdmi->blank != FB_BLANK_UNBLANK))
+	if (!hdmi->fb_reg ||
+	    hdmi->hp_state == HDMI_HOTPLUG_DISCONNECTED ||
+            hdmi->blank != FB_BLANK_UNBLANK)
 		return;
 
 	/*check csc whether needed activated in HDMI mode */
 	cscon = (isColorSpaceConversion(hdmi) &&
-			!hdmi->hdmi_data.video_mode.mDVI);
+		 (hdmi->hp_state == HDMI_HOTPLUG_CONNECTED_HDMI));
 
 	/* HDMI Phy spec says to do the phy initialization sequence twice */
 	for (i = 0 ; i < 2 ; i++) {
@@ -1362,7 +1380,7 @@ static void mxc_hdmi_phy_init(struct mxc_hdmi *hdmi)
 	}
 
 	hdmi->phy_enabled = true;
-	if (!hdmi->hdmi_data.video_mode.mDVI)
+	if (hdmi->hp_state == HDMI_HOTPLUG_CONNECTED_HDMI)
 		hdmi_enable_overflow_interrupts();
 }
 
@@ -1544,7 +1562,7 @@ static void hdmi_av_composer(struct mxc_hdmi *hdmi)
 		HDMI_FC_INVIDCONF_IN_I_P_INTERLACED :
 		HDMI_FC_INVIDCONF_IN_I_P_PROGRESSIVE);
 
-	inv_val |= (vmode->mDVI ?
+	inv_val |= ((hdmi->hp_state == HDMI_HOTPLUG_CONNECTED_DVI) ?
 		HDMI_FC_INVIDCONF_DVI_MODEZ_DVI_MODE :
 		HDMI_FC_INVIDCONF_DVI_MODEZ_HDMI_MODE);
 
@@ -1723,6 +1741,7 @@ static int mxc_hdmi_read_edid(struct mxc_hdmi *hdmi)
 		return HDMI_EDID_FAIL;
 
 	dev_info(&hdmi->pdev->dev, "%s reports %s mode\n", __func__, hdmi->edid_cfg.hdmi_cap?"HDMI":"DVI");
+	hdmi->hp_state = hdmi->edid_cfg.hdmi_cap?HDMI_HOTPLUG_CONNECTED_HDMI:HDMI_HOTPLUG_CONNECTED_DVI;
 	hdmi->plug_event = hdmi->edid_cfg.hdmi_cap?HDMI_IH_PHY_STAT0_HPD:HDMI_DVI_IH_STAT;
 	hdmi->plug_mask = hdmi->edid_cfg.hdmi_cap?HDMI_PHY_HPD:HDMI_DVI_STAT;
 
@@ -1791,7 +1810,8 @@ static void mxc_hdmi_enable_video_path(struct mxc_hdmi *hdmi)
 	hdmi_writeb(clkdis, HDMI_MC_CLKDIS);
 
 	/* Enable csc path */
-	if (isColorSpaceConversion(hdmi) && !hdmi->hdmi_data.video_mode.mDVI) {
+	if (isColorSpaceConversion(hdmi) &&
+	    (hdmi->hp_state == HDMI_HOTPLUG_CONNECTED_HDMI)) {
 		clkdis &= ~HDMI_MC_CLKDIS_CSCCLK_DISABLE;
 		hdmi_writeb(clkdis, HDMI_MC_CLKDIS);
 	}
@@ -2001,16 +2021,18 @@ static void mxc_hdmi_set_mode(struct mxc_hdmi *hdmi)
 
 static void mxc_hdmi_cable_connected(struct mxc_hdmi *hdmi)
 {
+	int edid_status;
+
 	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
 
-	hdmi->cable_plugin = true;
+	hdmi->hp_state = HDMI_HOTPLUG_CONNECTED_NO_EDID;
 
 	/* HDMI Initialization Step C */
-	hdmi->edid_status = mxc_hdmi_read_edid(hdmi);
+	edid_status = mxc_hdmi_read_edid(hdmi);
 
 	/* Read EDID again if first EDID read failed */
-	if (hdmi->edid_status == HDMI_EDID_NO_MODES ||
-			hdmi->edid_status == HDMI_EDID_FAIL) {
+	if (edid_status == HDMI_EDID_NO_MODES ||
+			edid_status == HDMI_EDID_FAIL) {
 		int retry_status;
 		dev_warn(&hdmi->pdev->dev, "Read EDID again\n");
 		msleep(200);
@@ -2018,11 +2040,11 @@ static void mxc_hdmi_cable_connected(struct mxc_hdmi *hdmi)
 		/* If we get NO_MODES on the 1st and SAME on the 2nd attempt we
 		 * want NO_MODES as final result. */
 		if (retry_status != HDMI_EDID_SAME)
-			hdmi->edid_status = retry_status;
+			edid_status = retry_status;
 	}
 
 	/* HDMI Initialization Steps D, E, F */
-	switch (hdmi->edid_status) {
+	switch (edid_status) {
 	case HDMI_EDID_SUCCESS:
 		mxc_hdmi_edid_rebuild_modelist(hdmi);
 		break;
@@ -2041,7 +2063,7 @@ static void mxc_hdmi_cable_connected(struct mxc_hdmi *hdmi)
 	}
 
 	/* Save edid cfg for audio driver */
-	hdmi_set_edid_cfg(hdmi->edid_status, &hdmi->edid_cfg);
+	hdmi_set_edid_cfg(edid_status, &hdmi->edid_cfg);
 
 	/* Setting video mode */
 	mxc_hdmi_set_mode(hdmi);
@@ -2082,7 +2104,7 @@ static void mxc_hdmi_cable_disconnected(struct mxc_hdmi *hdmi)
 
 	hdmi_disable_overflow_interrupts();
 
-	hdmi->cable_plugin = false;
+	hdmi->hp_state = HDMI_HOTPLUG_DISCONNECTED;
 }
 
 static void hotplug_worker(struct work_struct *work)
@@ -2264,14 +2286,13 @@ static void mxc_hdmi_setup(struct mxc_hdmi *hdmi, unsigned long event)
 
 	hdmi_disable_overflow_interrupts();
 
-	dev_dbg(&hdmi->pdev->dev, "CEA mode used vic=%d\n", hdmi->vic);
-	if (hdmi->edid_cfg.hdmi_cap || !hdmi->edid_status) {
+	if ((hdmi->hp_state == HDMI_HOTPLUG_CONNECTED_HDMI) ||
+	    (hdmi->hp_state == HDMI_HOTPLUG_CONNECTED_NO_EDID)) {
+		dev_dbg(&hdmi->pdev->dev, "CEA mode used vic=%d\n", hdmi->vic);
 		hdmi_set_dvi_mode(0);
-		hdmi->hdmi_data.video_mode.mDVI = false;
 	} else {
+		dev_dbg(&hdmi->pdev->dev, "VESA mode used vic=%d\n", hdmi->vic);
 		hdmi_set_dvi_mode(1);
-		dev_dbg(&hdmi->pdev->dev, "CEA mode vic=%d work in DVI\n", hdmi->vic);
-		hdmi->hdmi_data.video_mode.mDVI = true;
 	}
 
 	if ((hdmi->vic == 6) || (hdmi->vic == 7) ||
@@ -2302,7 +2323,7 @@ static void mxc_hdmi_setup(struct mxc_hdmi *hdmi, unsigned long event)
 	hdmi->hdmi_data.enc_out_format = RGB;
 
 	/* YCbCr only enabled in HDMI mode */
-	if (!hdmi->hdmi_data.video_mode.mDVI &&
+	if ((hdmi->hp_state == HDMI_HOTPLUG_CONNECTED_HDMI) &&
 		!hdmi->hdmi_data.rgb_out_enable) {
 		if (hdmi->edid_cfg.cea_ycbcr444)
 			hdmi->hdmi_data.enc_out_format = YCBCR444;
@@ -2325,9 +2346,7 @@ static void mxc_hdmi_setup(struct mxc_hdmi *hdmi, unsigned long event)
 	mxc_hdmi_enable_video_path(hdmi);
 
 	/* not for DVI mode */
-	if (hdmi->hdmi_data.video_mode.mDVI)
-		dev_dbg(&hdmi->pdev->dev, "%s DVI mode\n", __func__);
-	else {
+	if (hdmi->hp_state == HDMI_HOTPLUG_CONNECTED_HDMI) {
 		dev_dbg(&hdmi->pdev->dev, "%s CEA mode\n", __func__);
 
 		/* HDMI Initialization Step E - Configure audio */
@@ -2412,6 +2431,12 @@ static int mxc_hdmi_fb_event(struct notifier_block *nb,
 		break;
 
 	case FB_EVENT_BLANK:
+		if (!hdmi->fb_reg || hdmi->hp_state == HDMI_HOTPLUG_DISCONNECTED) {
+			dev_dbg(&hdmi->pdev->dev,
+				"event=FB_EVENT_BLANK - NOOP\n");
+			break;
+		}
+
 		if ((*((int *)event->data) == FB_BLANK_UNBLANK) &&
 			(*((int *)event->data) != hdmi->blank)) {
 			dev_dbg(&hdmi->pdev->dev,
@@ -2427,8 +2452,7 @@ static int mxc_hdmi_fb_event(struct notifier_block *nb,
 			/* Unmute interrupts */
 			hdmi_writeb(~hdmi->plug_event, HDMI_IH_MUTE_PHY_STAT0);
 
-			if (hdmi->fb_reg && hdmi->cable_plugin)
-				mxc_hdmi_setup(hdmi, val);
+			mxc_hdmi_setup(hdmi, val);
 			hdmi_set_blank_state(1);
 		} else if (*((int *)event->data) != hdmi->blank) {
 			dev_dbg(&hdmi->pdev->dev,
@@ -2438,7 +2462,7 @@ static int mxc_hdmi_fb_event(struct notifier_block *nb,
 
 			mxc_hdmi_phy_disable(hdmi);
 
-			if(hdmi->plug_mask == HDMI_DVI_STAT) {
+			if(hdmi->hp_state == HDMI_HOTPLUG_CONNECTED_DVI) {
 				u8 val;
 				pr_debug("In DVI Mode, disabling hotplug interrupts until unblanked\n");
 				val = hdmi_readb(HDMI_IH_MUTE_PHY_STAT0);
@@ -2721,7 +2745,7 @@ static int mxc_hdmi_disp_init(struct mxc_dispdrv_handle *disp,
 	hdmi->fbi->mode = (struct fb_videomode *)mode;
 
 	/* Default setting HDMI working in HDMI mode*/
-	hdmi->edid_cfg.hdmi_cap = true;
+	hdmi->hp_state = HDMI_HOTPLUG_DISCONNECTED;
 
 	hdmi->plug_event = HDMI_DVI_IH_STAT;
 	hdmi->plug_mask = HDMI_DVI_STAT;
