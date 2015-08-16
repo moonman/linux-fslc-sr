@@ -170,14 +170,13 @@ struct mxc_hdmi {
 	u8 edid[HDMI_EDID_LEN];
 	bool fb_reg;
 	bool cable_plugin;
-	u8  blank;
+	u8 blank;
 	bool dft_mode_set;
 	char *dft_mode_str;
 	int default_bpp;
 	u8 latest_intr_stat;
 	u8 plug_event;
 	u8 plug_mask;
-	bool irq_enabled;
 	spinlock_t irq_lock;
 	bool phy_enabled;
 	struct fb_videomode default_mode;
@@ -1723,11 +1722,11 @@ static int mxc_hdmi_read_edid(struct mxc_hdmi *hdmi)
 	if (ret < 0)
 		return HDMI_EDID_FAIL;
 
-	dev_info(&hdmi->pdev->dev, "%s HDMI in %s mode\n", __func__, hdmi->edid_cfg.hdmi_cap?"HDMI":"DVI");
+	dev_info(&hdmi->pdev->dev, "%s reports %s mode\n", __func__, hdmi->edid_cfg.hdmi_cap?"HDMI":"DVI");
 	hdmi->plug_event = hdmi->edid_cfg.hdmi_cap?HDMI_IH_PHY_STAT0_HPD:HDMI_DVI_IH_STAT;
 	hdmi->plug_mask = hdmi->edid_cfg.hdmi_cap?HDMI_PHY_HPD:HDMI_DVI_STAT;
 
-	if (!memcmp(edid_old, hdmi->edid, HDMI_EDID_LEN)) {
+	if (memcmp(edid_old, hdmi->edid, HDMI_EDID_LEN) == 0) {
 		dev_info(&hdmi->pdev->dev, "same edid\n");
 		return HDMI_EDID_SAME;
 	}
@@ -2013,7 +2012,7 @@ static void mxc_hdmi_cable_connected(struct mxc_hdmi *hdmi)
 	if (hdmi->edid_status == HDMI_EDID_NO_MODES ||
 			hdmi->edid_status == HDMI_EDID_FAIL) {
 		int retry_status;
-		dev_info(&hdmi->pdev->dev, "Read EDID again\n");
+		dev_warn(&hdmi->pdev->dev, "Read EDID again\n");
 		msleep(200);
 		retry_status = mxc_hdmi_read_edid(hdmi);
 		/* If we get NO_MODES on the 1st and SAME on the 2nd attempt we
@@ -2199,7 +2198,7 @@ static irqreturn_t mxc_hdmi_hotplug(int irq, void *data)
 	if (intr_stat & hdmi->plug_event) {
 
 		dev_dbg(&hdmi->pdev->dev, "Hotplug interrupt received\n");
-		dev_dbg(&hdmi->pdev->dev, "intr_stat %u plug_event %u\n", intr_stat, hdmi->plug_event);
+		dev_dbg(&hdmi->pdev->dev, "intr_stat 0x%x plug_event 0x%x\n", intr_stat, hdmi->plug_event);
 		hdmi->latest_intr_stat = intr_stat;
 
 		/* Mute interrupts until handled */
@@ -2319,7 +2318,7 @@ static void mxc_hdmi_setup(struct mxc_hdmi *hdmi, unsigned long event)
 	/* HDMI Initialization Step B.1 */
 	hdmi_av_composer(hdmi);
 
-	/* HDMI Initializateion Step B.2 */
+	/* HDMI Initialization Step B.2 */
 	mxc_hdmi_phy_init(hdmi);
 
 	/* HDMI Initialization Step B.3 */
@@ -2336,6 +2335,8 @@ static void mxc_hdmi_setup(struct mxc_hdmi *hdmi, unsigned long event)
 
 		/* HDMI Initialization Step F - Configure AVI InfoFrame */
 		hdmi_config_AVI(hdmi);
+	} else {
+		dev_dbg(&hdmi->pdev->dev, "%s DVI mode\n", __func__);
 	}
 
 	hdmi_video_packetize(hdmi);
