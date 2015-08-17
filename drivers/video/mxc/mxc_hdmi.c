@@ -2034,11 +2034,11 @@ static void mxc_hdmi_cable_connected(struct mxc_hdmi *hdmi)
 
 	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
 
+	hdmi->hp_state = HDMI_HOTPLUG_CONNECTED_NO_EDID;
+
 	console_lock();
 	fb_blank(hdmi->fbi, FB_BLANK_UNBLANK);
 	console_unlock();
-
-	hdmi->hp_state = HDMI_HOTPLUG_CONNECTED_NO_EDID;
 
 	/* HDMI Initialization Step C */
 	edid_status = mxc_hdmi_read_edid(hdmi);
@@ -2117,8 +2117,6 @@ static void mxc_hdmi_cable_disconnected(struct mxc_hdmi *hdmi)
 
 	hdmi_disable_overflow_interrupts();
 
-	hdmi->hp_state = HDMI_HOTPLUG_DISCONNECTED;
-
 	/* Prepare driver for next connection */
 	hdmi->dft_mode_set = false;
 	memset(&hdmi->previous_non_vga_mode, 0, sizeof(struct fb_videomode));
@@ -2126,6 +2124,8 @@ static void mxc_hdmi_cable_disconnected(struct mxc_hdmi *hdmi)
 	console_lock();
 	fb_blank(hdmi->fbi, FB_BLANK_POWERDOWN);
 	console_unlock();
+
+	hdmi->hp_state = HDMI_HOTPLUG_DISCONNECTED;
 }
 
 static void hotplug_worker(struct work_struct *work)
