@@ -216,10 +216,15 @@ extern int mxcfb_blank(int blank, struct fb_info *info);
 static void mxc_hdmi_setup(struct mxc_hdmi *hdmi, unsigned long event);
 static void hdmi_enable_overflow_interrupts(void);
 static void hdmi_disable_overflow_interrupts(void);
+static unsigned int getRGBQuantRange(struct mxc_hdmi *hdmi);
 
-static char *rgb_quant_range = "default";
+static char *rgb_quant_range = "auto";
 module_param(rgb_quant_range, charp, S_IRUGO);
-MODULE_PARM_DESC(rgb_quant_range, "RGB Quant Range (default, limited, full)");
+MODULE_PARM_DESC(rgb_quant_range, "RGB Quant Range (auto, default, limited, full)");
+
+static bool ignore_edid = 0;
+module_param(ignore_edid, bool, S_IRUGO);
+MODULE_PARM_DESC(ignore_edid, "Ignore EDID (default=0)");
 
 static struct platform_device_id imx_hdmi_devtype[] = {
 	{
@@ -355,8 +360,9 @@ static ssize_t mxc_hdmi_show_rgb_quant_range(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct mxc_hdmi *hdmi = dev_get_drvdata(dev);
+	int n;
 
-	switch (hdmi->hdmi_data.rgb_quant_range) {
+	switch (getRGBQuantRange(hdmi)) {
 	case HDMI_FC_AVICONF2_RGB_QUANT_LIMITED_RANGE: 
 		strcpy(buf, "limited\n");
 		break;
@@ -369,7 +375,14 @@ static ssize_t mxc_hdmi_show_rgb_quant_range(struct device *dev,
 		break;
 	};
 
-	return strlen(buf);
+	n = strlen(buf);
+
+	if (hdmi->hdmi_data.rgb_quant_range == HDMI_FC_AVICONF2_RGB_QUANT_MASK) {
+		strcpy(buf + n - 1, " (auto)\n");
+		n += 7;
+	}
+
+	return n;
 }
 
 static ssize_t mxc_hdmi_store_rgb_quant_range(struct device *dev,
@@ -384,6 +397,8 @@ static ssize_t mxc_hdmi_store_rgb_quant_range(struct device *dev,
 		hdmi->hdmi_data.rgb_quant_range = HDMI_FC_AVICONF2_RGB_QUANT_FULL_RANGE;
 	} else if (sysfs_streq("default", buf)) {
 		hdmi->hdmi_data.rgb_quant_range = HDMI_FC_AVICONF2_RGB_QUANT_DEFAULT;
+	} else if (sysfs_streq("auto", buf)) {
+		hdmi->hdmi_data.rgb_quant_range = HDMI_FC_AVICONF2_RGB_QUANT_MASK;
 	} else {
 		ret = -EINVAL;
 		goto out;
@@ -510,12 +525,23 @@ static void hdmi_video_sample(struct mxc_hdmi *hdmi)
 	hdmi_writeb(0x0, HDMI_TX_BCBDATA1);
 }
 
+static unsigned int getRGBQuantRange(struct mxc_hdmi *hdmi)
+{
+	if (hdmi->hdmi_data.rgb_quant_range != HDMI_FC_AVICONF2_RGB_QUANT_MASK)
+	      return hdmi->hdmi_data.rgb_quant_range;
+
+	return hdmi->edid_cfg.cea_rgb_range_selectable ?
+		HDMI_FC_AVICONF2_RGB_QUANT_FULL_RANGE : HDMI_FC_AVICONF2_RGB_QUANT_DEFAULT;
+}
+
 static int isColorSpaceConversion(struct mxc_hdmi *hdmi)
 {
+	unsigned int rgb_quant_range = getRGBQuantRange(hdmi);
+
 	return (hdmi->hdmi_data.enc_in_format != hdmi->hdmi_data.enc_out_format) ||
 		(hdmi->hdmi_data.enc_out_format == RGB &&
-		  ((hdmi->hdmi_data.rgb_quant_range == HDMI_FC_AVICONF2_RGB_QUANT_LIMITED_RANGE) ||
-		   (hdmi->hdmi_data.rgb_quant_range == HDMI_FC_AVICONF2_RGB_QUANT_DEFAULT && hdmi->vic > 1)));
+		  ((rgb_quant_range == HDMI_FC_AVICONF2_RGB_QUANT_LIMITED_RANGE) ||
+		   (rgb_quant_range == HDMI_FC_AVICONF2_RGB_QUANT_DEFAULT && hdmi->vic > 1)));
 }
 
 static int isColorSpaceDecimation(struct mxc_hdmi *hdmi)
@@ -1475,8 +1501,7 @@ static void hdmi_config_AVI(struct mxc_hdmi *hdmi)
 	 ********************************************/
 
 	val = HDMI_FC_AVICONF2_IT_CONTENT_NO_DATA | ext_colorimetry |
-		hdmi->hdmi_data.rgb_quant_range |
-		HDMI_FC_AVICONF2_SCALING_NONE;
+		getRGBQuantRange(hdmi) | HDMI_FC_AVICONF2_SCALING_NONE;
 	hdmi_writeb(val, HDMI_FC_AVICONF2);
 
 	/********************************************
@@ -2041,19 +2066,23 @@ static void mxc_hdmi_cable_connected(struct mxc_hdmi *hdmi)
 	console_unlock();
 
 	/* HDMI Initialization Step C */
-	edid_status = mxc_hdmi_read_edid(hdmi);
+	if (ignore_edid) {
+		edid_status = HDMI_EDID_FAIL;
+	} else {
+		edid_status = mxc_hdmi_read_edid(hdmi);
 
-	/* Read EDID again if first EDID read failed */
-	if (edid_status == HDMI_EDID_NO_MODES ||
-			edid_status == HDMI_EDID_FAIL) {
-		int retry_status;
-		dev_warn(&hdmi->pdev->dev, "Read EDID again\n");
-		msleep(200);
-		retry_status = mxc_hdmi_read_edid(hdmi);
-		/* If we get NO_MODES on the 1st and SAME on the 2nd attempt we
-		 * want NO_MODES as final result. */
-		if (retry_status != HDMI_EDID_SAME)
-			edid_status = retry_status;
+		/* Read EDID again if first EDID read failed */
+		if (edid_status == HDMI_EDID_NO_MODES ||
+				edid_status == HDMI_EDID_FAIL) {
+			int retry_status;
+			dev_warn(&hdmi->pdev->dev, "Read EDID again\n");
+			msleep(200);
+			retry_status = mxc_hdmi_read_edid(hdmi);
+			/* If we get NO_MODES on the 1st and SAME on the 2nd attempt we
+			 * want NO_MODES as final result. */
+			if (retry_status != HDMI_EDID_SAME)
+				edid_status = retry_status;
+		}
 	}
 
 	/* HDMI Initialization Steps D, E, F */
@@ -2798,8 +2827,10 @@ static int mxc_hdmi_disp_init(struct mxc_dispdrv_handle *disp,
 		hdmi->hdmi_data.rgb_quant_range = HDMI_FC_AVICONF2_RGB_QUANT_LIMITED_RANGE;
 	} else if (!strcasecmp(rgb_quant_range, "full")) {
 		hdmi->hdmi_data.rgb_quant_range = HDMI_FC_AVICONF2_RGB_QUANT_FULL_RANGE;
-	} else {
+	} else if (!strcasecmp(rgb_quant_range, "default")) {
 		hdmi->hdmi_data.rgb_quant_range = HDMI_FC_AVICONF2_RGB_QUANT_DEFAULT;
+	} else {
+		hdmi->hdmi_data.rgb_quant_range = HDMI_FC_AVICONF2_RGB_QUANT_MASK;
 	}
 
 	ret = devm_request_irq(&hdmi->pdev->dev, irq, mxc_hdmi_hotplug, IRQF_SHARED,
