@@ -43,6 +43,8 @@ struct snvs_rtc_data {
 
 static void __iomem *snvs_base;
 
+void snvs_poweroff(void);
+
 static u32 rtc_read_lp_counter(void __iomem *ioaddr)
 {
 	u64 read1, read2;
@@ -243,7 +245,7 @@ static irqreturn_t snvs_rtc_irq_handler(int irq, void *dev_id)
 	return events ? IRQ_HANDLED : IRQ_NONE;
 }
 
-static void snvs_poweroff(void)
+void snvs_poweroff(void)
 {
 	u32 value;
 
@@ -303,12 +305,6 @@ static int snvs_rtc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to register rtc: %d\n", ret);
 		return ret;
 	}
-	/*
-	 * if no specific power off function in board file, power off system by
-	 * SNVS
-	 */
-	if (!pm_power_off)
-		pm_power_off = snvs_poweroff;
 
 	return 0;
 }

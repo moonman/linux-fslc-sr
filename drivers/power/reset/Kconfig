@@ -43,6 +43,14 @@ config POWER_RESET_RESTART
 	  Instead they restart, and u-boot holds the SoC until the
 	  user presses a key. u-boot then boots into Linux.
 
+config POWER_RESET_SNVS
+	bool "Freescale SNVS RTC power-off driver"
+	depends on ARM 
+	depends on RTC_DRV_SNVS 
+	help
+	  Power off support for Freescale SOCs that rely on the SNVS
+	  RTC to poweroff the SOC.
+
 config POWER_RESET_VEXPRESS
 	bool "ARM Versatile Express power-off and reset driver"
 	depends on ARM || ARM64
