@@ -1956,6 +1956,9 @@ static void mxc_hdmi_edid_rebuild_modelist(struct mxc_hdmi *hdmi)
 		    (mxc_edid_mode_to_vic(mode) == 0))
 			continue;
 
+		if (fb_add_videomode(mode, &hdmi->fbi->modelist))
+			continue;
+
 		dev_dbg(&hdmi->pdev->dev, "Added mode %d:", i);
 		dev_dbg(&hdmi->pdev->dev,
 			"xres = %d, yres = %d, freq = %d, vmode = %d, flag = %d\n",
@@ -1964,8 +1967,6 @@ static void mxc_hdmi_edid_rebuild_modelist(struct mxc_hdmi *hdmi)
 			hdmi->fbi->monspecs.modedb[i].refresh,
 			hdmi->fbi->monspecs.modedb[i].vmode,
 			hdmi->fbi->monspecs.modedb[i].flag);
-
-		fb_add_videomode(mode, &hdmi->fbi->modelist);
 	}
 
 	fb_new_modelist(hdmi->fbi);
