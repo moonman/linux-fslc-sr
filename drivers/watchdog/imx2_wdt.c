@@ -205,7 +205,7 @@ static int imx2_wdt_close(struct inode *inode, struct file *file)
 {
 	if (test_bit(IMX2_WDT_EXPECT_CLOSE, &imx2_wdt.status) && !nowayout)
 		imx2_wdt_stop();
-	else {
+	else if (!timer_pending(&imx2_wdt.timer)) {
 		dev_crit(imx2_wdt_miscdev.parent,
 			"Unexpected close: Expect reboot!\n");
 		imx2_wdt_ping();
@@ -264,6 +264,15 @@ static long imx2_wdt_ioctl(struct file *file, unsigned int cmd,
 
 	case WDIOC_GETPRETIMEOUT:
 		return put_user(imx2_wdt.pretimeout, p);
+
+	case WDIOC_SETOPTIONS:
+		if (get_user(new_value, p))
+			return -EFAULT;
+		if (new_value & WDIOS_DISABLECARD)
+			imx2_wdt_stop();
+		if (new_value & WDIOS_ENABLECARD)
+			imx2_wdt_start();
+		return 0;
 
 	default:
 		return -ENOTTY;
