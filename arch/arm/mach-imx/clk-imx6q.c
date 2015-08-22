@@ -568,6 +568,8 @@ static void __init imx6q_clocks_init(struct device_node *ccm_node)
 	/*Set enet_ref clock to 125M to supply for RGMII tx_clk */
 	clk_set_rate(clk[IMX6QDL_CLK_ENET_REF], 125000000);
 
+	imx_clk_set_parent(clk[IMX6QDL_CLK_VPU_AXI_SEL], clk[IMX6QDL_CLK_PLL2_PFD0_352M]);
+	imx_clk_set_rate(clk[IMX6QDL_CLK_PLL2_PFD0_352M], 327000000);
 #ifdef CONFIG_MX6_VPU_352M
 	/*
 	 * If VPU 352M is enabled, then PLL2_PDF2 need to be
@@ -581,7 +583,6 @@ static void __init imx6q_clocks_init(struct device_node *ccm_node)
 	imx_clk_set_rate(clk[IMX6QDL_CLK_PLL2_PFD0_352M], 352000000);
 	pr_info("VPU 352M is enabled!\n");
 #endif
-	imx_clk_set_parent(clk[IMX6QDL_CLK_VPU_AXI_SEL], clk[IMX6QDL_CLK_PLL2_PFD0_352M]);
 
 	/* Set initial power mode */
 	imx6q_set_lpm(WAIT_CLOCKED);
