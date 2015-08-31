@@ -2035,6 +2035,10 @@ static void mxc_hdmi_set_mode(struct mxc_hdmi *hdmi)
 		return;
 	}
 
+	console_lock();
+	fb_blank(hdmi->fbi, FB_BLANK_UNBLANK);
+	console_unlock();
+
 	/* If video mode same as previous, init HDMI again */
 	if (fb_mode_is_equal(&hdmi->previous_non_vga_mode, mode)) {
 		dev_dbg(&hdmi->pdev->dev,
@@ -2060,10 +2064,6 @@ static void mxc_hdmi_cable_connected(struct mxc_hdmi *hdmi)
 	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
 
 	hdmi->hp_state = HDMI_HOTPLUG_CONNECTED_NO_EDID;
-
-	console_lock();
-	fb_blank(hdmi->fbi, FB_BLANK_UNBLANK);
-	console_unlock();
 
 	/* HDMI Initialization Step C */
 	if (ignore_edid) {
@@ -2504,8 +2504,9 @@ static int mxc_hdmi_fb_event(struct notifier_block *nb,
 			/* Unmute interrupts */
 			hdmi_writeb(~hdmi->plug_event, HDMI_IH_MUTE_PHY_STAT0);
 
-			mxc_hdmi_setup(hdmi, val);
 			hdmi_set_blank_state(1);
+			if (check_hdmi_state())
+				mxc_hdmi_setup(hdmi, val);
 		} else if (*((int *)event->data) != hdmi->blank) {
 			dev_dbg(&hdmi->pdev->dev,
 				"event=FB_EVENT_BLANK - BLANK\n");
