@@ -1558,10 +1558,7 @@ static void hdmi_av_composer(struct mxc_hdmi *hdmi)
 	vmode->mHSyncPolarity = ((fb_mode.sync & FB_SYNC_HOR_HIGH_ACT) != 0);
 	vmode->mVSyncPolarity = ((fb_mode.sync & FB_SYNC_VERT_HIGH_ACT) != 0);
 	vmode->mInterlaced = ((fb_mode.vmode & FB_VMODE_INTERLACED) != 0);
-	vmode->mPixelClock = (fb_mode.xres + fb_mode.left_margin +
-		fb_mode.right_margin + fb_mode.hsync_len) * (fb_mode.yres +
-		fb_mode.upper_margin + fb_mode.lower_margin +
-		fb_mode.vsync_len) * fb_mode.refresh;
+	vmode->mPixelClock = (u32) (mxcPICOS2KHZ(fb_mode.pixclock, fb_mode.vmode) * 1000UL);
 
 	dev_dbg(&hdmi->pdev->dev, "final pixclk = %d\n", vmode->mPixelClock);
 
@@ -2156,7 +2153,7 @@ static int mxc_hdmi_power_on(struct mxc_dispdrv_handle *disp,
 {
 	struct mxc_hdmi *hdmi = mxc_dispdrv_getdata(disp);
 	mxc_hdmi_phy_init(hdmi);
-	hdmi_clk_regenerator_update_pixel_clock(fbi->var.pixclock);
+	hdmi_clk_regenerator_update_pixel_clock(fbi->var.pixclock, fbi->var.vmode);
 	return 0;
 }
 
