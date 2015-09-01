@@ -17,6 +17,8 @@ LED sub-node properties:
   see Documentation/devicetree/bindings/leds/common.txt
 - linux,default-trigger :  (optional)
   see Documentation/devicetree/bindings/leds/common.txt
+- active-low : (optional)
+  Inverts the duty cycle to reflect a low-active output pin
 
 Example:
 
@@ -38,6 +40,7 @@ pwmleds {
 		label = "omap4::keypad";
 		pwms = <&twl_pwm 0 7812500>;
 		max-brightness = <127>;
+		active-low;
 	};
 
 	charging {
