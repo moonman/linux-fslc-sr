@@ -78,7 +78,7 @@ static unsigned long get_target_state(struct thermal_instance *instance,
 		dev_dbg(&cdev->device, "THERMAL_TREND_RAISE_FULL: next_target=%ld\n", next_target);
 		break;
 	case THERMAL_TREND_DROPPING:
-		if (cur_state == instance->lower) {
+		if (cur_state <= instance->lower) {
 			if (!throttle)
 				next_target = THERMAL_NO_TARGET;
 		} else {
