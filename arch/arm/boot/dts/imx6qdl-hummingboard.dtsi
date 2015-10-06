@@ -84,6 +84,11 @@
                 status = "disabled";
         };
 
+	v4l2_out {
+		compatible = "fsl,mxc_v4l2_output";
+		status = "okay";
+	};
+
 	regulators {
 		compatible = "simple-bus";
 

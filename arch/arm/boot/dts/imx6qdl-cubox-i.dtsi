@@ -74,6 +74,11 @@
 		status = "okay";
 	};
 
+        v4l2_out {
+                compatible = "fsl,mxc_v4l2_output";
+                status = "okay";
+        };
+
 	gpio-keys {
 		compatible = "gpio-keys";
 		pinctrl-0 = <&pinctrl_gpio_key>;
