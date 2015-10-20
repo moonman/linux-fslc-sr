@@ -2349,7 +2349,7 @@ static void mxc_hdmi_setup(struct mxc_hdmi *hdmi, unsigned long event)
 		memcpy(&hdmi->previous_non_vga_mode, &m,
 		       sizeof(struct fb_videomode));
 		/* Save any double/tripple buffer configuration (if active) */
-		if (&hdmi->fbi->var.xres_virtual != &hdmi->fbi->var.xres)
+		if (hdmi->fbi->var.yres_virtual != hdmi->fbi->var.yres)
 			memcpy(&hdmi->prev_virtual, &hdmi->fbi->var.xres_virtual, sizeof(hdmi->prev_virtual));
 		else
 			memset(&hdmi->prev_virtual, 0, sizeof(hdmi->prev_virtual));
