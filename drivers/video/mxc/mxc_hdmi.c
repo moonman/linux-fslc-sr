@@ -1899,7 +1899,7 @@ static void hdmi_disable_overflow_interrupts(void)
 	hdmi_writeb(0xff, HDMI_FC_MASK2);
 }
 
-static void mxc_hdmi_notify_fb(struct mxc_hdmi *hdmi)
+static void mxc_hdmi_notify_fb(struct mxc_hdmi *hdmi, bool force_all)
 {
 	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
 
@@ -1916,6 +1916,13 @@ static void mxc_hdmi_notify_fb(struct mxc_hdmi *hdmi)
 	 * will be done.
 	 */
 	hdmi->fbi->var.activate |= FB_ACTIVATE_FORCE;
+
+	/* If new screen was attached and resolutions
+	 * reconfigured to best fit it, force reconf all consoles
+	 */
+	if (force_all)
+		hdmi->fbi->var.activate |= FB_ACTIVATE_ALL;
+
 	console_lock();
 	hdmi->fbi->flags |= FBINFO_MISC_USEREVENT;
 	fb_set_var(hdmi->fbi, &hdmi->fbi->var);
@@ -2011,7 +2018,7 @@ static void mxc_hdmi_set_mode_to_vga_dvi(struct mxc_hdmi *hdmi)
 	fb_videomode_to_var(&hdmi->fbi->var, &vga_mode);
 
 	hdmi->requesting_vga_for_initialization = true;
-	mxc_hdmi_notify_fb(hdmi);
+	mxc_hdmi_notify_fb(hdmi, false);
 	hdmi->requesting_vga_for_initialization = false;
 }
 
@@ -2020,6 +2027,7 @@ static void mxc_hdmi_set_mode(struct mxc_hdmi *hdmi, int edid_status)
 	const struct fb_videomode *mode;
 	struct fb_videomode m;
 	struct fb_var_screeninfo var;
+	bool new_screen = false;
 
 	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
 
@@ -2037,6 +2045,7 @@ static void mxc_hdmi_set_mode(struct mxc_hdmi *hdmi, int edid_status)
 		dev_dbg(&hdmi->pdev->dev,
 				"xBuffer not active, trying new best display mode\n");
 		mode = fb_find_best_display(&hdmi->fbi->monspecs, &hdmi->fbi->modelist);
+		new_screen = !!mode;
 	} else {
 		fb_var_to_videomode(&m, &var);
 		dump_fb_videomode(&m);
@@ -2070,12 +2079,12 @@ static void mxc_hdmi_set_mode(struct mxc_hdmi *hdmi, int edid_status)
 		if (hdmi->prev_virtual.xres_virtual)
 			memcpy(&hdmi->fbi->var.xres_virtual, &hdmi->prev_virtual, sizeof(hdmi->prev_virtual));
 		/* update hdmi setting in case EDID data updated  */
-		mxc_hdmi_notify_fb(hdmi);
+		mxc_hdmi_notify_fb(hdmi, new_screen);
 	} else {
 		dev_dbg(&hdmi->pdev->dev, "%s: New video mode\n", __func__);
 		mxc_hdmi_set_mode_to_vga_dvi(hdmi);
 		fb_videomode_to_var(&hdmi->fbi->var, mode);
-		mxc_hdmi_notify_fb(hdmi);
+		mxc_hdmi_notify_fb(hdmi, new_screen);
 	}
 
 }
