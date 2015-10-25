@@ -191,7 +191,6 @@ struct mxc_hdmi {
 		u32 xres_virtual;
 		u32 yres_virtual;
 	} prev_virtual;
-	bool requesting_vga_for_initialization;
 
 	int *gpr_base;
 	int *gpr_hdmi_base;
@@ -2017,19 +2016,6 @@ static void  mxc_hdmi_default_modelist(struct mxc_hdmi *hdmi)
 	console_unlock();
 }
 
-static void mxc_hdmi_set_mode_to_vga_dvi(struct mxc_hdmi *hdmi)
-{
-	dev_dbg(&hdmi->pdev->dev, "%s\n", __func__);
-
-	hdmi_disable_overflow_interrupts();
-
-	fb_videomode_to_var(&hdmi->fbi->var, &vga_mode);
-
-	hdmi->requesting_vga_for_initialization = true;
-	mxc_hdmi_notify_fb(hdmi, false);
-	hdmi->requesting_vga_for_initialization = false;
-}
-
 static void mxc_hdmi_set_mode(struct mxc_hdmi *hdmi, int edid_status)
 {
 	const struct fb_videomode *mode;
@@ -2052,49 +2038,43 @@ static void mxc_hdmi_set_mode(struct mxc_hdmi *hdmi, int edid_status)
 	if (edid_status == HDMI_EDID_SUCCESS && !hdmi->prev_virtual.xres_virtual) {
 		dev_dbg(&hdmi->pdev->dev,
 				"xBuffer not active, trying new best display mode\n");
-		mode = fb_find_best_display(&hdmi->fbi->monspecs, &hdmi->fbi->modelist);
-		new_screen = !!mode;
-	} else {
-		fb_var_to_videomode(&m, &var);
-		dump_fb_videomode(&m);
-		mode = mxc_fb_find_nearest_mode(&m, &hdmi->fbi->modelist, false);
+		if ((mode = fb_find_best_display(&hdmi->fbi->monspecs, &hdmi->fbi->modelist)))
+			fb_videomode_to_var(&var, mode);
 	}
 
-	if (!mode) {
+	fb_var_to_videomode(&m, &var);
+	dump_fb_videomode(&m);
+	mode = mxc_fb_find_nearest_mode(&m, &hdmi->fbi->modelist, false);
+
+	if (mode) {
+		hdmi->fbi->mode = (struct fb_videomode *)mode;
+		fb_videomode_to_var(&hdmi->fbi->var, mode);
+	} else {
 		pr_err("%s: could not find mode in modelist\n", __func__);
 		return;
 	}
 
+	/* restore xBuffer if dimension match */
+	if ((edid_status == HDMI_EDID_SAME && fb_mode_is_equal(&hdmi->previous_non_vga_mode, mode)) ||
+	    (edid_status != HDMI_EDID_SAME && mxc_fb_mode_is_equal_res(&hdmi->previous_non_vga_mode, mode))) {
+		dev_dbg(&hdmi->pdev->dev,
+				"%s: Video mode %ssame as previous\n", __func__, edid_status == HDMI_EDID_SAME ? "+ EDID " : "");
+		if (hdmi->prev_virtual.xres_virtual)
+			memcpy(&hdmi->fbi->var.xres_virtual, &hdmi->prev_virtual, sizeof(hdmi->prev_virtual));
+	} else {
+		dev_dbg(&hdmi->pdev->dev, "%s: New video mode\n", __func__);
+		new_screen = true;
+	}
+
+	hdmi_set_cable_state(1);
+
+	/* apply previously set hdmi->fbi->var */
 	console_lock();
 	fb_blank(hdmi->fbi, FB_BLANK_UNBLANK);
 	console_unlock();
 
-	/* update fbi mode in case modelist is updated */
-	hdmi->fbi->mode = (struct fb_videomode *)mode;
-	dump_fb_videomode(hdmi->fbi->mode);
-
-	/* If video mode same as previous, init HDMI again */
-	if (fb_mode_is_equal(&hdmi->previous_non_vga_mode, mode) && edid_status == HDMI_EDID_SAME) {
-		dev_dbg(&hdmi->pdev->dev,
-				"%s: Video mode + EDID same as previous\n", __func__);
-		if (hdmi->prev_virtual.xres_virtual)
-			memcpy(&hdmi->fbi->var.xres_virtual, &hdmi->prev_virtual, sizeof(hdmi->prev_virtual));
-		mxc_hdmi_setup(hdmi, 0);
-	} else if (mxc_fb_mode_is_equal_res(&hdmi->previous_non_vga_mode, mode) && edid_status != HDMI_EDID_SAME) {
-		dev_dbg(&hdmi->pdev->dev,
-				"%s: Video mode same as previous\n", __func__);
-		fb_videomode_to_var(&hdmi->fbi->var, mode);
-		if (hdmi->prev_virtual.xres_virtual)
-			memcpy(&hdmi->fbi->var.xres_virtual, &hdmi->prev_virtual, sizeof(hdmi->prev_virtual));
-		/* update hdmi setting in case EDID data updated  */
+	if (edid_status != HDMI_EDID_SAME)
 		mxc_hdmi_notify_fb(hdmi, new_screen);
-	} else {
-		dev_dbg(&hdmi->pdev->dev, "%s: New video mode\n", __func__);
-		mxc_hdmi_set_mode_to_vga_dvi(hdmi);
-		fb_videomode_to_var(&hdmi->fbi->var, mode);
-		mxc_hdmi_notify_fb(hdmi, new_screen);
-	}
-
 }
 
 static void mxc_hdmi_cable_connected(struct mxc_hdmi *hdmi)
@@ -2226,7 +2206,6 @@ static void hotplug_worker(struct work_struct *work)
 #ifdef CONFIG_MXC_HDMI_CEC
 			mxc_hdmi_cec_handle(0x80);
 #endif
-			hdmi_set_cable_state(1);
 		} else {
 			/* Plugout event */
 			dev_dbg(&hdmi->pdev->dev, "EVENT=plugout\n");
@@ -2360,7 +2339,7 @@ static void mxc_hdmi_setup(struct mxc_hdmi *hdmi, unsigned long event)
 	dev_dbg(&hdmi->pdev->dev, "%s - video mode changed\n", __func__);
 
 	hdmi->vic = 0;
-	if (!hdmi->requesting_vga_for_initialization) {
+	{
 		/* Save mode if this isn't the result of requesting
 		 * vga default. */
 		memcpy(&hdmi->previous_non_vga_mode, &m,
